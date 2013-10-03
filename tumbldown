@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -e
+
+SITE=$1
+DIRECTORY=${2:-$SITE}
+
+NUM=50
+START=0
+
+url="http://${SITE}.tumblr.com/api/read?type=photo&num=${NUM}&start=${START}"
+
+command -v "curl" >/dev/null || {
+    echo "$(basename $0): curl command not found." 1>&2
+    exit 1
+}
+
+mkdir -p $DIRECTORY || {
+    echo "$(basename $0): could not create $DIRECTORY." 1>&2
+    exit 1
+}
+
+read_dom () {
+    local IFS=\>
+    read -d \< ENTITY CONTENT
+    local RET=$?
+    TAG_NAME=${ENTITY%% *}
+    ATTRIBUTES=${ENTITY#* }
+    return $RET
+}
+
+parse_dom() {
+    if [[ $TAG_NAME = "photo-url" ]] ; then
+        eval local ${ATTRIBUTES/-/}
+        if [[ $maxwidth = 1280 ]]; then
+            local FILE=${CONTENT##*/}
+            if [[ ! -f $DIRECTORY/$FILE ]]; then
+                echo "Downloading $FILE"
+                curl --silent --output $DIRECTORY/$FILE ${CONTENT}
+                downloaded=$((downloaded+1))
+            else
+                skipped=$((skipped+1))
+            fi
+        fi
+    fi
+}
+
+
+echo "Downloading from $SITE to directory $DIRECTORY"
+
+downloaded=0
+skipped=0
+
+while read_dom; do
+    parse_dom
+done< <(curl --silent --location $url)
+
+echo "Downloaded $downloaded files, skipped $skipped"
